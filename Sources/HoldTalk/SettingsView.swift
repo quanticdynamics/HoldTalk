@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var keepWarm = Settings.keepWarmDuration
     @State private var autoUpdates = Settings.autoCheckUpdates
+    @State private var spokenLanguage = Settings.spokenLanguage
 
     @StateObject private var transcribeDownloader = ModelDownloader()
     @StateObject private var translateDownloader = ModelDownloader()
@@ -20,10 +21,24 @@ struct SettingsView: View {
                     Settings.transcribeHotkey = $0
                     appDelegate?.startHotkeyMonitor()
                 }
-                HotkeyRecorderRow(title: "Translate (Bangla → English)", hotkey: $translateHotkey) {
+                HotkeyRecorderRow(title: "Translate to English", hotkey: $translateHotkey) {
                     Settings.translateHotkey = $0
                     appDelegate?.startHotkeyMonitor()
                 }
+            }
+
+            Section("Speech") {
+                Picker("Spoken language", selection: $spokenLanguage) {
+                    Text("Bangla (Bengali)").tag(SpokenLanguage.bengali)
+                    Text("English").tag(SpokenLanguage.english)
+                    Text("Auto-detect").tag(SpokenLanguage.auto)
+                }
+                .onChange(of: spokenLanguage) { _, value in
+                    Settings.spokenLanguage = value
+                }
+                Text("Applies to both modes on the next dictation. Choose Bangla for short Bengali clips; Auto-detect can mistake them for another language. Translation always outputs English.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Models") {

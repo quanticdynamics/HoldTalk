@@ -8,6 +8,7 @@ let package = Package(
         .executableTarget(
             name: "HoldTalk",
             path: "Sources/HoldTalk"
-        )
+        ),
+        .testTarget(name: "HoldTalkTests", dependencies: ["HoldTalk"])
     ]
 )

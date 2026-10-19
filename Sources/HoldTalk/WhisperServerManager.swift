@@ -55,18 +55,7 @@ final class WhisperServerManager {
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: binary)
-            var arguments = [
-                "-m", ModelManager.modelPath(for: mode).path,
-                "--host", "127.0.0.1",
-                "--port", String(port),
-                "-l", "auto",
-                "-t", "4",
-                "-ac", Self.audioContext,
-            ]
-            if mode == .translate {
-                arguments.append("-tr")
-            }
-            process.arguments = arguments
+            process.arguments = Self.serverArguments(mode: mode, port: port, language: Settings.spokenLanguage)
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
             do {
@@ -121,6 +110,21 @@ final class WhisperServerManager {
     }
 
     // MARK: - Private
+
+    static func serverArguments(mode: DictationMode, port: Int, language: SpokenLanguage) -> [String] {
+        var arguments = [
+            "-m", ModelManager.modelPath(for: mode).path,
+            "--host", "127.0.0.1",
+            "--port", String(port),
+            "-l", language.rawValue,
+            "-t", "4",
+            "-ac", Self.audioContext,
+        ]
+        if mode == .translate {
+            arguments.append("-tr")
+        }
+        return arguments
+    }
 
     private func restartIdleTimerLocked() {
         let interval = Settings.keepWarmDuration

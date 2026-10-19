@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
 
 jobs:
@@ -14,5 +14,7 @@ jobs:
         run: swift --version
       - name: Build
         run: swift build -c release
+      - name: Test
+        run: swift test
       - name: Assemble app bundle
         run: ./scripts/build-app.sh release

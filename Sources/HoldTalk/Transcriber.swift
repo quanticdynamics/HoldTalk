@@ -7,6 +7,11 @@ final class Transcriber {
     private var currentProcess: Process?
     private var cancelled = false
     private let queue = DispatchQueue(label: "holdtalk.transcriber")
+    private let session: URLSession
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
 
     /// Locates the whisper.cpp CLI binary (Homebrew installs it as whisper-cli).
     static func findWhisperCLI() -> String? {
@@ -23,15 +28,16 @@ final class Transcriber {
         queue.async { [weak self] in
             guard let self else { return }
             self.cancelled = false
+            let language = Settings.spokenLanguage
 
             let text: String?
             if let baseURL = WhisperServerManager.shared.waitForServer(mode: mode) {
                 Log.write("transcribe: server path \(baseURL)")
-                text = self.transcribeViaServer(baseURL: baseURL, audioURL: audioURL, mode: mode)
-                    ?? self.transcribeViaCLI(audioURL: audioURL, mode: mode) // server hiccup → CLI
+                text = self.transcribeViaServer(baseURL: baseURL, audioURL: audioURL, mode: mode, language: language)
+                    ?? self.transcribeViaCLI(audioURL: audioURL, mode: mode, language: language) // server hiccup → CLI
             } else {
                 Log.write("transcribe: CLI fallback path")
-                text = self.transcribeViaCLI(audioURL: audioURL, mode: mode)
+                text = self.transcribeViaCLI(audioURL: audioURL, mode: mode, language: language)
             }
             Log.write("transcribe: result \(text.map { "\($0.count) chars" } ?? "nil")")
             WhisperServerManager.shared.touch()
@@ -58,18 +64,18 @@ final class Transcriber {
 
     // MARK: - Server path
 
-    private func transcribeViaServer(baseURL: URL, audioURL: URL, mode: DictationMode) -> String? {
-        let text = postInference(baseURL: baseURL, audioURL: audioURL, language: "auto")
+    func transcribeViaServer(baseURL: URL, audioURL: URL, mode: DictationMode, language: SpokenLanguage) -> String? {
+        let text = postInference(baseURL: baseURL, audioURL: audioURL, mode: mode, language: language)
 
         // Whisper often misdetects Bangla as Hindi on short clips. If auto-detect
         // produced Devanagari, re-run once forced to Bangla.
-        if mode == .transcribe, let text, Self.looksLikeHindiMisdetection(text), !cancelled {
-            return postInference(baseURL: baseURL, audioURL: audioURL, language: "bn") ?? text
+        if language == .auto, mode == .transcribe, let text, Self.looksLikeHindiMisdetection(text), !cancelled {
+            return postInference(baseURL: baseURL, audioURL: audioURL, mode: mode, language: .bengali) ?? text
         }
         return text
     }
 
-    private func postInference(baseURL: URL, audioURL: URL, language: String) -> String? {
+    private func postInference(baseURL: URL, audioURL: URL, mode: DictationMode, language: SpokenLanguage) -> String? {
         guard let audioData = try? Data(contentsOf: audioURL) else { return nil }
 
         let boundary = "holdtalk-\(UUID().uuidString)"
@@ -78,7 +84,10 @@ final class Transcriber {
             body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".data(using: .utf8)!)
         }
         field("response_format", "text")
-        field("language", language)
+        field("language", language.rawValue)
+        // The source language and the output task are independent. Send both on
+        // every request, including retries and requests to an already-warm server.
+        field("translate", mode == .translate ? "true" : "false")
         field("temperature", "0.0")
         body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\n".data(using: .utf8)!)
         body.append(audioData)
@@ -91,7 +100,7 @@ final class Transcriber {
 
         let semaphore = DispatchSemaphore(value: 0)
         var result: String?
-        URLSession.shared.dataTask(with: request) { data, response, _ in
+        session.dataTask(with: request) { data, response, _ in
             if let data, let http = response as? HTTPURLResponse, http.statusCode == 200 {
                 result = String(data: data, encoding: .utf8)?
                     .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -104,21 +113,19 @@ final class Transcriber {
 
     // MARK: - CLI fallback path
 
-    private func transcribeViaCLI(audioURL: URL, mode: DictationMode) -> String? {
-        let text = runCLI(audioURL: audioURL, mode: mode, language: "auto")
-        if mode == .transcribe, let text, Self.looksLikeHindiMisdetection(text), !cancelled {
-            return runCLI(audioURL: audioURL, mode: mode, language: "bn") ?? text
+    private func transcribeViaCLI(audioURL: URL, mode: DictationMode, language: SpokenLanguage) -> String? {
+        let text = runCLI(audioURL: audioURL, mode: mode, language: language)
+        if language == .auto, mode == .transcribe, let text, Self.looksLikeHindiMisdetection(text), !cancelled {
+            return runCLI(audioURL: audioURL, mode: mode, language: .bengali) ?? text
         }
         return text
     }
 
-    private func runCLI(audioURL: URL, mode: DictationMode, language: String) -> String? {
-        guard let cli = Self.findWhisperCLI() else { return nil }
-
+    static func cliArguments(audioURL: URL, mode: DictationMode, language: SpokenLanguage) -> [String] {
         var arguments = [
             "-m", ModelManager.modelPath(for: mode).path,
             "-f", audioURL.path,
-            "-l", language,
+            "-l", language.rawValue,
             "-nt",          // no timestamps
             "-np",          // no progress/debug prints
             "-t", "4",      // 4 threads — fast on M1 without starving other work
@@ -126,10 +133,15 @@ final class Transcriber {
         if mode == .translate {
             arguments.append("--translate")
         }
+        return arguments
+    }
+
+    private func runCLI(audioURL: URL, mode: DictationMode, language: SpokenLanguage) -> String? {
+        guard let cli = Self.findWhisperCLI() else { return nil }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: cli)
-        process.arguments = arguments
+        process.arguments = Self.cliArguments(audioURL: audioURL, mode: mode, language: language)
         let stdout = Pipe()
         process.standardOutput = stdout
         process.standardError = Pipe() // discard

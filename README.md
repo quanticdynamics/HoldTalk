@@ -29,8 +29,8 @@ into whatever app you're typing in — your editor, browser, terminal, anywhere.
 - 🙌 **Hands-free mode** — double-tap the hotkey, talk freely, tap once to stop.
 - 🎛️ **Dictation pill** — floating HUD with a live mic-level waveform and ✕ / ✓ buttons that never steal focus.
 - 🕘 **History** — every transcript saved locally; pin, copy, multi-select delete.
-- 🌏 **Bilingual** — speak Bangla → Bangla text, speak English → English text, auto-detected. Includes a fix for Whisper's notorious Bangla→Hindi misdetection.
-- 🔁 **Translate mode** — hold Right Option + Shift, speak Bangla, get polished English text.
+- 🌏 **Spoken language** — defaults to Bangla for reliable language selection on short clips. Select English or Auto-detect in Settings for English or multilingual dictation.
+- 🔁 **Translate mode** — hold Right Option + Shift to translate the selected spoken language into English.
 - ⚡ **Fast** — the model preloads *while you're speaking* and stays warm between dictations: ~1.5–3.5s per dictation instead of ~17s cold.
 - 🪶 **Featherweight when idle** — ~57 MB RAM, 0% CPU. The ~600 MB speech model auto-unloads after a configurable idle period. Built for 8 GB Macs running heavy dev workloads.
 - ⌨️ **Customizable hotkeys** — rebind both modes from Settings.
@@ -100,12 +100,12 @@ Then:
 
 | Action | Result |
 |---|---|
-| Hold **Right ⌥** + speak | Transcribe in spoken language (Bangla/English auto) |
+| Hold **Right ⌥** + speak | Transcribe in selected spoken language (default: Bangla) |
 | Hold **Right ⌥ ⇧** + speak | Translate speech → English text |
 | Double-tap **Right ⌥**, speak, tap once | Hands-free dictation |
 | ✕ / ✓ on the floating pill | Cancel / finish the current dictation |
 | Menu bar → History | Browse, pin, copy, delete past transcripts |
-| Menu bar → Settings | Rebind hotkeys, keep-warm duration, launch at login |
+| Menu bar → Settings | Spoken language, hotkeys, keep-warm duration, launch at login |
 
 ## Models
 
@@ -134,8 +134,20 @@ HoldTalk's goal is zero cost and zero cloud. Whisper large-v3-turbo locally on
 Apple Silicon is fast enough that the API buys you little.
 
 **Does it work with languages other than Bangla/English?**
-Yes — Whisper auto-detects ~100 languages. The Bangla→Hindi retry heuristic
-only kicks in when auto-detect produces Devanagari.
+Choose **Settings → Spoken language → Auto-detect** for other languages, or
+**English** for English dictation. The default is **Bangla (Bengali)** in both
+transcription and translation; translation output is always English. Changes
+apply to the next dictation, including when the server is already warm.
+The Bangla→Hindi retry only runs for Auto-detect transcription that produces
+Devanagari. It cannot identify an incorrect English sentence or judge the
+meaning of a translation.
+
+**Why can short Bangla clips produce unrelated English?**
+Automatic language detection can choose the wrong language, and the existing
+Devanagari retry does not catch English output. Explicit Bengali input removes
+that detection ambiguity, but does not guarantee accurate recognition or
+translation of colloquial Bangla. No phrase-specific replacement is applied.
+See [the Bengali validation checklist](docs/bengali-validation.md).
 
 **Why does Accessibility permission reset after I rebuild?**
 macOS ties permissions to the code signature. Create the stable local signing
@@ -150,6 +162,7 @@ in sequential chunks automatically.
 
 ```bash
 swift build                  # debug build
+swift test                   # language selection and inference transport regressions
 ./scripts/build-app.sh       # release .app bundle in dist/
 ```
 

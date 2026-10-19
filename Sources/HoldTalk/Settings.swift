@@ -74,6 +74,12 @@ struct HotkeyConfig: Equatable {
     }
 }
 
+enum SpokenLanguage: String {
+    case bengali = "bn"
+    case english = "en"
+    case auto = "auto"
+}
+
 /// UserDefaults-backed app settings.
 enum Settings {
     private static let defaults = UserDefaults.standard
@@ -85,6 +91,13 @@ enum Settings {
         static let translateFlags = "translateFlags"
         static let keepWarmDuration = "keepWarmDuration"
         static let autoCheckUpdates = "autoCheckUpdates"
+        static let spokenLanguage = "spokenLanguage"
+    }
+
+    /// Pin short Bangla clips to Bengali rather than guessing their language.
+    static var spokenLanguage: SpokenLanguage {
+        get { SpokenLanguage(rawValue: defaults.string(forKey: Key.spokenLanguage) ?? "") ?? .bengali }
+        set { defaults.set(newValue.rawValue, forKey: Key.spokenLanguage) }
     }
 
     /// Whether to check GitHub for new releases automatically (launch + daily).
